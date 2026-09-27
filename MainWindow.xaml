@@ -1,27 +1,34 @@
 <Window x:Class="DesktopPager.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Desktop Pager" 
-        Height="600" 
+        Title="Desktop Pager (SK)"
+        Height="600"
         Width="900"
         WindowStartupLocation="CenterScreen"
         Background="#1E1E1E"
         ResizeMode="CanResize"
         WindowStyle="None"
         AllowsTransparency="True"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        SourceInitialized="Window_SourceInitialized"
+        StateChanged="Window_StateChanged"
         Loaded="Window_Loaded">
-
     <Window.Resources>
         <!-- Page Card Style -->
         <Style x:Key="PageCardStyle" TargetType="Border">
             <Setter Property="Background" Value="#2D2D30"/>
-            <Setter Property="CornerRadius" Value="12"/>
-            <Setter Property="Padding" Value="20"/>
+            <Setter Property="CornerRadius" Value="14"/>
+            <Setter Property="Padding" Value="14"/>
             <Setter Property="Margin" Value="10"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="2"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Effect">
                 <Setter.Value>
-                    <DropShadowEffect Color="Black" Opacity="0.3" BlurRadius="15" ShadowDepth="5"/>
+                    <DropShadowEffect Color="Black" Opacity="0.35" BlurRadius="18" ShadowDepth="5"/>
                 </Setter.Value>
             </Setter>
             <Style.Triggers>
@@ -31,9 +38,9 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Active Page Card Style -->
+        <!-- Active Page Card Style: rovnaké pozadie, len zvýraznený farebný rámček -->
         <Style x:Key="ActivePageCardStyle" TargetType="Border" BasedOn="{StaticResource PageCardStyle}">
-            <Setter Property="Background">
+            <Setter Property="BorderBrush">
                 <Setter.Value>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                         <GradientStop Color="#4285F4" Offset="0"/>
@@ -41,34 +48,23 @@
                     </LinearGradientBrush>
                 </Setter.Value>
             </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background">
-                        <Setter.Value>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#5294FF" Offset="0"/>
-                                <GradientStop Color="#4BC863" Offset="1"/>
-                            </LinearGradientBrush>
-                        </Setter.Value>
-                    </Setter>
-                </Trigger>
-            </Style.Triggers>
         </Style>
 
-        <!-- Button Style -->
+        <!-- Jednotný štýl pre všetky ikonkové tlačidlá: horné okenné ovládanie AJ ikonky na kartách -->
         <Style x:Key="ModernButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="#3E3E42"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="15,8"/>
-            <Setter Property="Margin" Value="5,5,0,0"/>
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="10,7"/>
+            <Setter Property="Margin" Value="4,0,4,0"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FontSize" Value="12"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" 
-                                CornerRadius="6" 
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="6"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
@@ -79,6 +75,9 @@
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="#505050"/>
                 </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.35"/>
+                </Trigger>
             </Style.Triggers>
         </Style>
 
@@ -87,15 +86,15 @@
             <Setter Property="Background" Value="#4285F4"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="30,15"/>
+            <Setter Property="Padding" Value="18,8"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" 
-                                CornerRadius="8" 
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="8"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
@@ -111,59 +110,73 @@
     </Window.Resources>
 
     <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="60" 
-                      ResizeBorderThickness="7" 
-                      CornerRadius="12" 
-                      GlassFrameThickness="0" 
+        <WindowChrome x:Name="Chrome"
+                      CaptionHeight="42"
+                      ResizeBorderThickness="7"
+                      CornerRadius="12"
+                      GlassFrameThickness="0"
                       UseAeroCaptionButtons="False"/>
     </WindowChrome.WindowChrome>
 
-    <Border CornerRadius="12" Background="#1E1E1E" BorderBrush="#3E3E42" BorderThickness="1">
+    <Border x:Name="RootBorder" CornerRadius="12" Background="#1E1E1E" BorderBrush="#3E3E42" BorderThickness="1">
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="60"/>
+                <RowDefinition Height="42"/>
+                <RowDefinition Height="26"/>
                 <RowDefinition Height="*"/>
-                <RowDefinition Height="80"/>
+                <RowDefinition Height="52"/>
             </Grid.RowDefinitions>
 
             <!-- Title Bar -->
-            <Border Grid.Row="0" Background="#252526" CornerRadius="12,12,0,0" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Border x:Name="TitleBarBorder" Grid.Row="0" Background="#252526" CornerRadius="11,11,0,0" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <Grid>
-                    <TextBlock Text="Desktop Pager" 
-                               FontSize="20" 
-                               FontWeight="SemiBold" 
-                               Foreground="White" 
-                               VerticalAlignment="Center" 
-                               Margin="20,0"/>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="10">
-                        <Button Content="─" 
-                                Width="40" 
-                                Height="30" 
-                                Style="{StaticResource ModernButtonStyle}" 
+                    <TextBlock Text="Desktop Pager"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               Foreground="White"
+                               VerticalAlignment="Center"
+                               Margin="16,-2,0,2"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="8,0">
+                        <Button x:Name="MinimizeButton"
+                                Content="&#xE921;"
+                                Style="{StaticResource ModernButtonStyle}"
+                                FontSize="10"
+                                Foreground="#D6D6D6"
+                                VerticalAlignment="Center"
                                 Click="MinimizeButton_Click"
-                                Margin="0,0,5,0"
+                                ToolTip="Minimalizovať"
                                 WindowChrome.IsHitTestVisibleInChrome="True"/>
                         <Button x:Name="MaximizeButton"
-                                Content="□" 
-                                Width="40" 
-                                Height="30" 
-                                Style="{StaticResource ModernButtonStyle}" 
+                                Content="&#xE922;"
+                                Style="{StaticResource ModernButtonStyle}"
+                                FontSize="10"
+                                Foreground="#D6D6D6"
+                                VerticalAlignment="Center"
                                 Click="MaximizeButton_Click"
-                                Margin="0,0,5,0"
+                                ToolTip="Maximalizovať"
                                 WindowChrome.IsHitTestVisibleInChrome="True"/>
-                        <Button Content="✕" 
-                                Width="40" 
-                                Height="30" 
-                                Style="{StaticResource ModernButtonStyle}" 
+                        <Button Content="&#xE8BB;"
+                                Style="{StaticResource ModernButtonStyle}"
+                                FontSize="10"
+                                Foreground="#D6D6D6"
+                                VerticalAlignment="Center"
                                 Click="CloseButton_Click"
-                                Margin="0,0,5,0"
+                                ToolTip="Zavrieť"
                                 WindowChrome.IsHitTestVisibleInChrome="True"/>
                     </StackPanel>
                 </Grid>
             </Border>
 
+            <!-- Hint riadok -->
+            <TextBlock Grid.Row="1"
+                       Text="💡 Kliknutím na kartu prepneš plochu · tlačidlá slúžia na premenovanie, tapetu a mazanie"
+                       Foreground="#9A9A9A"
+                       FontSize="11"
+                       VerticalAlignment="Center"
+                       HorizontalAlignment="Center"/>
+
             <!-- Pages Grid -->
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="20">
+            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="20,0,20,20">
                 <ItemsControl x:Name="PagesItemsControl">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -174,19 +187,23 @@
             </ScrollViewer>
 
             <!-- Bottom Actions -->
-            <Border Grid.Row="2" Background="#252526" CornerRadius="0,0,12,12">
+            <Border x:Name="BottomBarBorder" Grid.Row="3" Background="#252526" CornerRadius="0,0,11,11">
                 <Grid>
-                    <TextBlock Text="Version 1.0 | © 2026 Umut Faruk Dilli" 
-                               Foreground="#808080" 
-                               FontSize="11" 
-                               VerticalAlignment="Bottom" 
-                               HorizontalAlignment="Left" 
-                               Margin="20,0,0,15"/>
-                    <Button Content="➕ New Page" 
-                            Style="{StaticResource NewPageButtonStyle}" 
-                            HorizontalAlignment="Center" 
+                    <TextBlock Text="Verzia 1.0 (SK preklad) | © 2026 Umut Faruk Dilli"
+                               Foreground="#808080"
+                               FontSize="10"
+                               VerticalAlignment="Bottom"
+                               HorizontalAlignment="Left"
+                               Margin="20,0,0,10"/>
+                    <Button Style="{StaticResource NewPageButtonStyle}"
+                            HorizontalAlignment="Center"
                             VerticalAlignment="Center"
-                            Click="NewPageButton_Click"/>
+                            Click="NewPageButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="10" Foreground="White" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="Pridať novú plochu" FontSize="13" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
                 </Grid>
             </Border>
         </Grid>

@@ -37,33 +37,27 @@ namespace DesktopPager
             _systemDir = Path.Combine(_baseDir, "System");
             _layoutsDir = Path.Combine(_systemDir, "Layouts");
             _iconsDir = Path.Combine(_baseDir, "Icons");
-            
             _stateFile = Path.Combine(_systemDir, "current_page.txt");
             _pageNamesFile = Path.Combine(_systemDir, "page_names.txt");
-            
             _desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory); // Use DesktopDirectory for physical path behavior
             _logFile = Path.Combine(_baseDir, "error_log.txt");
             _ignoreFile = Path.Combine(_baseDir, "ignore.txt");
-
             _pageNames = new Dictionary<int, string>();
 
             EnsureDirectories();
-
             _wallpaperManager = new WallpaperManager(_systemDir);
-            
+
             // Log the detected desktop path for debugging
             LogError($"Initialized. Detected Desktop Path: {_desktopPath}");
-            
+
             LoadIgnoredFiles();
             LoadPageNames();
         }
 
-
         private void LoadIgnoredFiles()
         {
             _ignoredNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            
-            _ignoredNames.Add("current_page.txt"); 
+            _ignoredNames.Add("current_page.txt");
             _ignoredNames.Add("ignore.txt");
             _ignoredNames.Add("error_log.txt");
             _ignoredNames.Add("desktop.ini");
@@ -174,7 +168,7 @@ namespace DesktopPager
             }
 
             int currentPage = GetCurrentPage();
-            
+
             // Prevent deletion of current page
             if (currentPage == pageNum)
             {
@@ -222,7 +216,7 @@ namespace DesktopPager
 
                 if (!File.Exists(_ignoreFile))
                 {
-                    File.WriteAllLines(_ignoreFile, new[] { "desktop.ini", "Recycle Bin.lnk" }); 
+                    File.WriteAllLines(_ignoreFile, new[] { "desktop.ini", "Recycle Bin.lnk" });
                 }
             }
             catch (Exception ex)
@@ -271,7 +265,7 @@ namespace DesktopPager
                 var dirs = Directory.GetDirectories(_pagesDir);
                 foreach (var dir in dirs)
                 {
-                    var name = Path.GetFileName(dir); 
+                    var name = Path.GetFileName(dir);
                     if (name.StartsWith("Page") && int.TryParse(name.Substring(4), out int num))
                     {
                         pages.Add(num);
@@ -282,7 +276,7 @@ namespace DesktopPager
             {
                 LogError($"Failed to list pages: {ex.Message}");
             }
-            
+
             if (pages.Count == 0)
             {
                 pages.Add(1);
@@ -300,7 +294,7 @@ namespace DesktopPager
             try
             {
                 string path = Path.Combine(_pagesDir, $"Page{pageNum}");
-                if (!Directory.Exists(path)) 
+                if (!Directory.Exists(path))
                 {
                     Directory.CreateDirectory(path);
                     // Create shortcut only when the page is first created
@@ -320,8 +314,7 @@ namespace DesktopPager
             if (pages.Count == 0) return;
 
             int next = pages.FirstOrDefault(p => p > current);
-            if (next == 0) next = pages.Min(); 
-
+            if (next == 0) next = pages.Min();
             SwitchPage(next);
         }
 
@@ -332,8 +325,7 @@ namespace DesktopPager
             if (pages.Count == 0) return;
 
             int prev = pages.LastOrDefault(p => p < current);
-            if (prev == 0) prev = pages.Max(); 
-
+            if (prev == 0) prev = pages.Max();
             SwitchPage(prev);
         }
 
@@ -345,7 +337,7 @@ namespace DesktopPager
 
             // Create the new page folder
             CreatePageFolder(newPageNum);
-            
+
             // Switch to it
             SwitchPage(newPageNum);
         }
@@ -353,8 +345,8 @@ namespace DesktopPager
         public void SwitchPage(int toPage)
         {
             int fromPage = GetCurrentPage();
-            
-            // If we are already on the page AND it's a junction, do nothing. 
+
+            // If we are already on the page AND it's a junction, do nothing.
             // BUT verify if it is a junction.
             if (fromPage == toPage && IsJunctionActive) return;
 
@@ -366,11 +358,11 @@ namespace DesktopPager
 
             // 1. Save current page layout BEFORE switching
             // This is critical because once we change the junction, the old page is no longer accessible
+            // Icon positions are scanned ONCE and reused for both the full layout and the shared
+            // shortcut positions (previously this was two independent, slow scans per switch).
             string fromLayoutFile = Path.Combine(_layoutsDir, $"Page{fromPage}.json");
-            DesktopIcons.SaveLayout(fromLayoutFile);
-            
-            // Also save shortcut positions separately for syncing across pages
-            SaveShortcutPositions();
+            string shortcutPosFile = Path.Combine(_systemDir, "shortcut_positions.json");
+            DesktopIcons.SaveLayoutAndShortcuts(fromLayoutFile, shortcutPosFile, GetShortcutNames());
 
             // 2. Ensure we are in Junction Mode (Migration or Update)
             EnsureJunction(fromPage, toPage);
@@ -383,16 +375,15 @@ namespace DesktopPager
 
             // 5. Restore Layout (if exists)
             // Reduced sleep because RestoreLayout now polls continuously
-            System.Threading.Thread.Sleep(200); 
-            
+            System.Threading.Thread.Sleep(200);
             string layoutFile = Path.Combine(_layoutsDir, $"Page{toPage}.json");
             DesktopIcons.RestoreLayout(layoutFile);
-            
+
             // 6. Apply shortcut positions from shared config
             System.Threading.Thread.Sleep(200);
             ApplyShortcutPositions();
         }
-        
+
         public void SetWallpaperForPage(int page, string path)
         {
             _wallpaperManager.SetWallpaper(page, path, isEngine: false);
@@ -426,19 +417,6 @@ namespace DesktopPager
             }
         }
 
-        private void SaveShortcutPositions()
-        {
-            try
-            {
-                string shortcutPosFile = Path.Combine(_systemDir, "shortcut_positions.json");
-                DesktopIcons.SaveShortcutPositions(shortcutPosFile, GetShortcutNames());
-            }
-            catch (Exception ex)
-            {
-                LogError($"Failed to save shortcut positions: {ex.Message}");
-            }
-        }
-        
         private void ApplyShortcutPositions()
         {
             try
@@ -451,7 +429,7 @@ namespace DesktopPager
                 LogError($"Failed to apply shortcut positions: {ex.Message}");
             }
         }
-        
+
         private List<string> GetShortcutNames()
         {
             return new List<string>
@@ -459,7 +437,7 @@ namespace DesktopPager
                 "Desktop Pager"
             };
         }
-        
+
         public void SaveCurrentLayout()
         {
             int current = GetCurrentPage();
@@ -500,9 +478,7 @@ namespace DesktopPager
                 // Now Desktop should be empty.
                 // We must delete the Desktop directory to create a junction there.
                 // Strategy: Rename it first to unblock the path, then create Junction, then try delete backup.
-                
                 string backupPath = _desktopPath + $"_Backup_{Guid.NewGuid().ToString("N").Substring(0, 8)}";
-                
                 bool moved = false;
                 Exception? lastEx = null;
 
@@ -526,20 +502,20 @@ namespace DesktopPager
                 if (!moved)
                 {
                     string errorMsg = $"Failed to prepare Desktop folder for paging logic.\n\n" +
-                                     $"Error: {lastEx?.Message}\n\n" +
-                                     "This usually happens when a file on your Desktop is open in another program, or Windows Explorer is locking the folder.\n\n" +
-                                     "Please:\n" +
-                                     "1. Close all open files/folders on your Desktop.\n" +
-                                     "2. Try running the application again.\n" +
-                                     "3. If it still fails, try restarting your computer.";
-                    
+                        $"Error: {lastEx?.Message}\n\n" +
+                        "This usually happens when a file on your Desktop is open in another program, or Windows Explorer is locking the folder.\n\n" +
+                        "Please:\n" +
+                        "1. Close all open files/folders on your Desktop.\n" +
+                        "2. Try running the application again.\n" +
+                        "3. If it still fails, try restarting your computer.";
+
                     LogError(errorMsg);
                     throw new IOException(errorMsg);
                 }
 
                 // Now _desktopPath is free.
                 CreateJunction(_desktopPath, targetDir);
-                
+
                 // Cleanup backup
                 try
                 {
@@ -562,10 +538,10 @@ namespace DesktopPager
             catch (Exception ex)
             {
                 LogError($"Failed to delete junction directly: {ex.Message}. Trying Rename strategy.");
-                
+
                 // If direct delete fails (locked), try renaming it aside
                 string backupPath = path + $"_OldLink_{Guid.NewGuid().ToString("N").Substring(0, 8)}";
-                try 
+                try
                 {
                     Directory.Move(path, backupPath);
                     // If successful, delete the renamed link
@@ -609,7 +585,7 @@ namespace DesktopPager
             try
             {
                 var dirInfo = new DirectoryInfo(sourceDir);
-                
+
                 // Move Files
                 foreach (var file in dirInfo.GetFiles())
                 {
@@ -671,7 +647,7 @@ namespace DesktopPager
             {
                 // Create only one shortcut - "Desktop Pager" that opens the tray menu
                 string appIconPath = IconGenerator.GenerateApplicationIcon(_iconsDir);
-                
+
                 if (!string.IsNullOrEmpty(appIconPath) && File.Exists(appIconPath))
                 {
                     CreateShortcut(desktopPath, "Desktop Pager", "tray", appIconPath);
@@ -681,7 +657,7 @@ namespace DesktopPager
                     // Fallback to system icon
                     CreateShortcut(desktopPath, "Desktop Pager", "tray", SystemIcons.Application.ToString());
                 }
-                
+
                 // Note: User can manually position the shortcut in bottom-right corner
             }
             catch (Exception ex)
@@ -692,33 +668,32 @@ namespace DesktopPager
 
         private void CreateShortcut(string folder, string name, string arg, string iconLocation)
         {
-             string shortcutPath = Path.Combine(folder, $"{name}.lnk");
-             
-             // Do NOT delete existing shortcut to preserve desktop position!
-             // WScript.Shell.CreateShortcut opens existing or creates new.
+            string shortcutPath = Path.Combine(folder, $"{name}.lnk");
 
-             try
-             {
-                 Type shellType = Type.GetTypeFromProgID("WScript.Shell");
-                 if (shellType == null) return;
-                 
-                 dynamic shell = Activator.CreateInstance(shellType);
-                 dynamic shortcut = shell.CreateShortcut(shortcutPath);
-                 
-                 string exePath = Process.GetCurrentProcess().MainModule.FileName;
-                 
-                 shortcut.TargetPath = exePath;
-                 shortcut.Arguments = arg;
-                 shortcut.WorkingDirectory = Path.GetDirectoryName(exePath);
-                 shortcut.Description = $"Switch to {name}";
-                 shortcut.IconLocation = iconLocation;
-                 shortcut.Save();
-             }
-             catch (Exception ex)
-             {
-                 LogError($"Failed to create/update shortcut '{name}': {ex.Message}");
-             }
+            // Do NOT delete existing shortcut to preserve desktop position!
+            // WScript.Shell.CreateShortcut opens existing or creates new.
+            try
+            {
+                Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+                if (shellType == null) return;
+
+                dynamic shell = Activator.CreateInstance(shellType);
+                dynamic shortcut = shell.CreateShortcut(shortcutPath);
+
+                string exePath = Process.GetCurrentProcess().MainModule.FileName;
+                shortcut.TargetPath = exePath;
+                shortcut.Arguments = arg;
+                shortcut.WorkingDirectory = Path.GetDirectoryName(exePath);
+                shortcut.Description = $"Switch to {name}";
+                shortcut.IconLocation = iconLocation;
+                shortcut.Save();
+            }
+            catch (Exception ex)
+            {
+                LogError($"Failed to create/update shortcut '{name}': {ex.Message}");
+            }
         }
+
         public WallpaperConfig? GetWallpaperConfig(int page)
         {
             return _wallpaperManager.GetConfig(page);

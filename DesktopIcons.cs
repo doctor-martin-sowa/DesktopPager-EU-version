@@ -19,18 +19,14 @@ namespace DesktopPager
         private const uint LVM_GETITEMPOSITION = LVM_FIRST + 16;
         private const uint LVM_SETITEMPOSITION32 = LVM_FIRST + 49; // 0x1031
         private const uint LVM_GETITEMTEXTW = LVM_FIRST + 115;
-
         private const uint PROCESS_VM_OPERATION = 0x0008;
         private const uint PROCESS_VM_READ = 0x0010;
         private const uint PROCESS_VM_WRITE = 0x0020;
-        
         private const uint MEM_COMMIT = 0x1000;
         private const uint MEM_RESERVE = 0x2000;
         private const uint MEM_RELEASE = 0x8000;
         private const uint PAGE_READWRITE = 0x04;
-
         private const uint LVIF_TEXT = 0x0001;
-
         private const uint LVM_GETEXTENDEDLISTVIEWSTYLE = LVM_FIRST + 55;
         private const uint LVM_SETEXTENDEDLISTVIEWSTYLE = LVM_FIRST + 54;
         private const uint LVS_EX_AUTOAUTOARRANGE = 0x01000000;
@@ -92,7 +88,7 @@ namespace DesktopPager
 
         private static string GetLogPath()
         {
-             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "DesktopPager", "System", "error_log.txt");
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "DesktopPager", "System", "error_log.txt");
         }
 
         private static void LogError(string msg)
@@ -119,35 +115,26 @@ namespace DesktopPager
         {
             try
             {
-                Dictionary<string, Point> icons = new Dictionary<string, Point>();
-                
-                // Retry logic: sometimes getting icons fails (returns 0) if desktop is refreshing
-                for (int i = 0; i < 5; i++)
-                {
-                    icons = GetIconPositions();
-                    if (icons.Count > 0) break;
-                    Thread.Sleep(200);
-                }
+                Dictionary<string, Point> icons = GetIconPositionsWithRetry();
 
                 // If we still have 0 icons, avoiding overwriting the file with empty data might be safer
-                // UNLESS the user really has 0 icons. 
-                // But usually, one has at least Recycle Bin. 
+                // UNLESS the user really has 0 icons.
+                // But usually, one has at least Recycle Bin.
                 if (icons.Count == 0)
                 {
                     LogError($"SaveLayout: Warning - 0 icons found. Skipping save to avoid data loss for {path}");
                     return;
                 }
-                
+
                 // Convert Point to IconPosition for JSON serialization
                 var serializableIcons = new Dictionary<string, IconPosition>();
                 foreach (var kvp in icons)
                 {
                     serializableIcons[kvp.Key] = new IconPosition { X = kvp.Value.X, Y = kvp.Value.Y };
                 }
-                
+
                 string json = JsonSerializer.Serialize(serializableIcons, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(path, json);
-                
                 LogError($"SaveLayout: Saved {serializableIcons.Count} icon positions to {path}");
             }
             catch (Exception ex)
@@ -156,15 +143,77 @@ namespace DesktopPager
             }
         }
 
+        // Skenuje pozície ikon RAZ (s opakovaním pri neúspechu) a zapíše naraz aj úplný
+        // layout stránky, aj podmnožinu pre zdieľané skratky - namiesto dvoch nezávislých
+        // skenovaní pri každom prepnutí plochy, ktoré tam predtým prebiehali (SaveLayout +
+        // SaveShortcutPositions robili to isté cez pomalé nízkoúrovňové volania dvakrát).
+        public static void SaveLayoutAndShortcuts(string layoutPath, string shortcutPath, List<string> shortcutNames)
+        {
+            try
+            {
+                Dictionary<string, Point> icons = GetIconPositionsWithRetry();
+
+                if (icons.Count == 0)
+                {
+                    LogError($"SaveLayoutAndShortcuts: Warning - 0 icons found. Skipping save to avoid data loss for {layoutPath}");
+                    return;
+                }
+
+                // --- Úplný layout stránky ---
+                var serializableIcons = new Dictionary<string, IconPosition>();
+                foreach (var kvp in icons)
+                {
+                    serializableIcons[kvp.Key] = new IconPosition { X = kvp.Value.X, Y = kvp.Value.Y };
+                }
+                string layoutJson = JsonSerializer.Serialize(serializableIcons, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(layoutPath, layoutJson);
+                LogError($"SaveLayoutAndShortcuts: Saved {serializableIcons.Count} icon positions to {layoutPath}");
+
+                // --- Podmnožina pre zdieľané skratky (z rovnakého skenu, žiadny druhý sken) ---
+                var shortcutPositions = new Dictionary<string, IconPosition>();
+                foreach (var name in shortcutNames)
+                {
+                    if (icons.TryGetValue(name, out Point pt))
+                    {
+                        shortcutPositions[name] = new IconPosition { X = pt.X, Y = pt.Y };
+                    }
+                }
+
+                if (shortcutPositions.Count > 0)
+                {
+                    string shortcutJson = JsonSerializer.Serialize(shortcutPositions, new JsonSerializerOptions { WriteIndented = true });
+                    File.WriteAllText(shortcutPath, shortcutJson);
+                    LogError($"SaveLayoutAndShortcuts: Saved {shortcutPositions.Count} shortcut positions");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"Failed in SaveLayoutAndShortcuts: {ex.Message}");
+            }
+        }
+
+        private static Dictionary<string, Point> GetIconPositionsWithRetry()
+        {
+            Dictionary<string, Point> icons = new Dictionary<string, Point>();
+            // Retry logic: sometimes getting icons fails (returns 0) if desktop is refreshing
+            for (int i = 0; i < 5; i++)
+            {
+                icons = GetIconPositions();
+                if (icons.Count > 0) break;
+                Thread.Sleep(200);
+            }
+            return icons;
+        }
+
         public static void RestoreLayout(string path)
         {
             try
             {
                 if (!File.Exists(path)) return;
-                
+
                 string json = File.ReadAllText(path);
                 var serializableIcons = JsonSerializer.Deserialize<Dictionary<string, IconPosition>>(json);
-                
+
                 if (serializableIcons != null && serializableIcons.Count > 0)
                 {
                     // Convert IconPosition back to Point
@@ -173,15 +222,14 @@ namespace DesktopPager
                     {
                         icons[kvp.Key] = new Point { X = kvp.Value.X, Y = kvp.Value.Y };
                     }
-                    
+
                     int expectedCount = icons.Count;
                     LogError($"RestoreLayout: Start (Expecting {expectedCount} icons)");
-                    
+
                     // Continuous Loop
                     // We try for a fixed duration (e.g. 4 seconds) to catch icons as they appear.
                     // We do NOT break early unless we have placed ALL matched icons successfully.
                     int maxAttempts = 30; // 30 * 150ms ~ 4.5 seconds
-                    
                     for (int attempt = 0; attempt < maxAttempts; attempt++)
                     {
                         IntPtr hWnd = GetDesktopListView();
@@ -196,11 +244,11 @@ namespace DesktopPager
 
                         // Try to position what we have
                         int placedCount = SetIconPositions(icons);
-                        
+
                         if (placedCount >= expectedCount)
                         {
-                             LogError($"RestoreLayout: All {placedCount} icons placed successfully. Done.");
-                             break;
+                            LogError($"RestoreLayout: All {placedCount} icons placed successfully. Done.");
+                            break;
                         }
 
                         // Log progress periodically (e.g. every 5th attempt)
@@ -208,7 +256,7 @@ namespace DesktopPager
                         {
                             LogError($"RestoreLayout: Placed {placedCount}/{expectedCount} icons... (Attempt {attempt})");
                         }
-                        
+
                         Thread.Sleep(150);
                     }
                 }
@@ -225,7 +273,7 @@ namespace DesktopPager
             {
                 var allPositions = GetIconPositions();
                 var shortcutPositions = new Dictionary<string, IconPosition>();
-                
+
                 foreach (var name in shortcutNames)
                 {
                     if (allPositions.ContainsKey(name))
@@ -234,7 +282,7 @@ namespace DesktopPager
                         shortcutPositions[name] = new IconPosition { X = pt.X, Y = pt.Y };
                     }
                 }
-                
+
                 if (shortcutPositions.Count > 0)
                 {
                     string json = JsonSerializer.Serialize(shortcutPositions, new JsonSerializerOptions { WriteIndented = true });
@@ -253,10 +301,10 @@ namespace DesktopPager
             try
             {
                 if (!File.Exists(path)) return;
-                
+
                 string json = File.ReadAllText(path);
                 var shortcutPositions = JsonSerializer.Deserialize<Dictionary<string, IconPosition>>(json);
-                
+
                 if (shortcutPositions != null && shortcutPositions.Count > 0)
                 {
                     // Convert to Point dictionary
@@ -265,9 +313,9 @@ namespace DesktopPager
                     {
                         positions[kvp.Key] = new Point { X = kvp.Value.X, Y = kvp.Value.Y };
                     }
-                    
+
                     LogError($"RestoreShortcutPositions: Applying {positions.Count} shortcut positions");
-                    
+
                     // Apply positions
                     IntPtr hWnd = GetDesktopListView();
                     if (hWnd != IntPtr.Zero)
@@ -306,7 +354,7 @@ namespace DesktopPager
                 // This is often the primary culprit for "Snap to Grid/Auto Arrange" behavior
                 IntPtr style = GetWindowLongPtr(hWnd, GWL_STYLE);
                 long styleLong = (long)style;
-                
+
                 if ((styleLong & LVS_AUTOARRANGE) == LVS_AUTOARRANGE)
                 {
                     LogError("Disabling LVS_AUTOARRANGE standard style...");
@@ -324,7 +372,7 @@ namespace DesktopPager
         {
             var result = new Dictionary<string, Point>();
             IntPtr hWnd = GetDesktopListView();
-            if (hWnd == IntPtr.Zero) 
+            if (hWnd == IntPtr.Zero)
             {
                 LogError("GetDesktopListView returned zero.");
                 return result;
@@ -332,7 +380,7 @@ namespace DesktopPager
 
             GetWindowThreadProcessId(hWnd, out uint processId);
             IntPtr hProcess = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, processId);
-            if (hProcess == IntPtr.Zero) 
+            if (hProcess == IntPtr.Zero)
             {
                 LogError($"OpenProcess failed. Error: {Marshal.GetLastWin32Error()}");
                 return result;
@@ -341,15 +389,15 @@ namespace DesktopPager
             try
             {
                 int count = (int)SendMessage(hWnd, LVM_GETITEMCOUNT, IntPtr.Zero, IntPtr.Zero);
-                if (count <= 0) 
+                if (count <= 0)
                 {
                     // This is common if desktop is refreshing, so we won't log error always, but good for debug
-                    return result; 
+                    return result;
                 }
 
                 // Allocate memory in remote process
                 IntPtr ptAddress = VirtualAllocEx(hProcess, IntPtr.Zero, (uint)Marshal.SizeOf(typeof(Point)), MEM_COMMIT, PAGE_READWRITE);
-                
+
                 // LVITEM struct + text buffer
                 int textSize = 512;
                 int lvItemSize = Marshal.SizeOf(typeof(LVITEM));
@@ -385,7 +433,6 @@ namespace DesktopPager
                     // 2. Get Position
                     // Use LVM_GETITEMPOSITION (0x1010)
                     SendMessage(hWnd, LVM_GETITEMPOSITION, (IntPtr)i, ptAddress);
-                    
                     IntPtr localPt = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Point)));
                     ReadProcessMemory(hProcess, ptAddress, localPt, (uint)Marshal.SizeOf(typeof(Point)), out _);
                     Point pt = Marshal.PtrToStructure<Point>(localPt);
@@ -433,7 +480,7 @@ namespace DesktopPager
                 int lvItemSize = Marshal.SizeOf(typeof(LVITEM));
                 int pointSize = Marshal.SizeOf(typeof(Point));
                 uint totalSize = (uint)(lvItemSize + textSize + pointSize);
-                
+
                 // Allocate for LVITEM, Text, and Point
                 IntPtr remoteMem = VirtualAllocEx(hProcess, IntPtr.Zero, totalSize, MEM_COMMIT, PAGE_READWRITE);
                 IntPtr lvItemAddress = remoteMem;
@@ -448,7 +495,7 @@ namespace DesktopPager
                     lvi.cchTextMax = textSize / 2;
                     lvi.pszText = textAddress;
                     lvi.iItem = i;
-                    
+
                     IntPtr localLvItem = Marshal.AllocHGlobal(lvItemSize);
                     Marshal.StructureToPtr(lvi, localLvItem, false);
                     WriteProcessMemory(hProcess, lvItemAddress, localLvItem, (uint)lvItemSize, out _);
@@ -465,10 +512,9 @@ namespace DesktopPager
                     if (!string.IsNullOrEmpty(text) && positions.ContainsKey(text))
                     {
                         Point pt = positions[text];
-                        
+
                         // Use LVM_SETITEMPOSITION32 (0x1031)
                         // It requires a pointer to a POINT structure in the remote process
-                        
                         IntPtr localPt = Marshal.AllocHGlobal(pointSize);
                         Marshal.StructureToPtr(pt, localPt, false);
                         WriteProcessMemory(hProcess, pointAddress, localPt, (uint)pointSize, out _);
@@ -478,7 +524,7 @@ namespace DesktopPager
                         matchedCount++;
                     }
                 }
-                
+
                 VirtualFreeEx(hProcess, remoteMem, 0, MEM_RELEASE);
             }
             catch (Exception ex)
@@ -489,6 +535,7 @@ namespace DesktopPager
             {
                 // Cleanup
             }
+
             return matchedCount;
         }
 
@@ -501,7 +548,7 @@ namespace DesktopPager
         {
             IntPtr progman = FindWindow("Progman", null);
             IntPtr defView = FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
-            
+
             if (defView == IntPtr.Zero)
             {
                 // Try WorkerW for Windows 7+ with wallpapers
@@ -510,7 +557,6 @@ namespace DesktopPager
                 {
                     workerW = FindWindowEx(IntPtr.Zero, workerW, "WorkerW", null);
                     if (workerW == IntPtr.Zero) break;
-
                     defView = FindWindowEx(workerW, IntPtr.Zero, "SHELLDLL_DefView", null);
                     if (defView != IntPtr.Zero) break;
                 }
